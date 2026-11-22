@@ -30,7 +30,7 @@
 2. 端末で、ダウンロードしたフォルダに移動して実行
 
    ```bash
-   sudo apt install ./pyamp_1.3.3_all.deb
+   sudo apt install ./pyamp_1.3.4_all.deb
    ```
 
    （ファイルをダブルクリックして「アプリセンター」からインストールしても OK です）

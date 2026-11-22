@@ -250,12 +250,17 @@ class Player(QObject):
         self.info_changed.emit(self._kbps, self._khz, self._channels)
 
     def _queue_spectrum(self, s):
-        """解析結果は実際に音が出るより少し早く届くので、出る時刻まで待たせる"""
+        """解析結果は実際に音が出るより少し早く届くので、その音が鳴る時刻まで待たせる。
+        時刻は「曲の中の位置（stream-time）」で比べる。
+        （音の出口の時計は曲が変わるとリセットされることがあり、それで比べると止まってしまうため）"""
         m = _MAG_RE.search(s.to_string())
         if not m:
             return
         values = [float(x) for x in m.group(1).split(",")]
-        end = s.get_value("running-time") + s.get_value("duration")
+        ok, stream_time = s.get_uint64("stream-time")
+        if not ok:
+            stream_time = s.get_value("running-time")
+        end = stream_time + s.get_value("duration")
         self._spectrum_queue.append((end, values))
         while len(self._spectrum_queue) > 50:
             self._spectrum_queue.popleft()
@@ -263,13 +268,14 @@ class Player(QObject):
     def _emit_due_spectrum(self):
         if not self._spectrum_queue or self._state != "playing":
             return
-        clock = self._playbin.get_clock()
-        if clock is None:
-            now = None
-        else:
-            now = clock.get_time() - self._playbin.get_base_time()
+        ok, now = self._playbin.query_position(Gst.Format.TIME)
         latest = None
-        while self._spectrum_queue and (now is None or self._spectrum_queue[0][0] <= now):
-            latest = self._spectrum_queue.popleft()[1]
+        while self._spectrum_queue:
+            end = self._spectrum_queue[0][0]
+            # 位置が分からない・大きくずれている（2秒以上先）ときは待たずに出す（止まったままにしない）
+            if not ok or end <= now or end - now > 2 * Gst.SECOND:
+                latest = self._spectrum_queue.popleft()[1]
+            else:
+                break
         if latest is not None:
             self.spectrum_changed.emit(latest)
